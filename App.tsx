@@ -6,6 +6,7 @@ import PesananPage from './pages/PesananPage';
 import LaporanPage from './pages/LaporanPage';
 import StokPage from './pages/StokPage';
 import PengaturanPage from './pages/PengaturanPage';
+import QayzanStudioPage from './pages/QayzanStudioPage';
 import { Header } from './components/Header';
 import { Modal } from './components/Modal';
 import { Toast } from './components/Toast';
@@ -16,6 +17,20 @@ export const Utils = {
     formatDate: (iso: string | null) => { if (!iso) return '-'; return new Date(iso).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }); },
     formatTime: (iso: string | null) => { if (!iso) return '-'; return new Date(iso).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.',':'); },
     getTodayDateString: () => new Date().toISOString().slice(0, 10),
+    /**
+     * Determines the business date string (YYYY-MM-DD) for a given date.
+     * Considers times before 6 AM to belong to the previous calendar day.
+     * @param date The date object to check. Defaults to now.
+     * @returns The ISO date string (YYYY-MM-DD) of the business day.
+     */
+    getBusinessDateString: (date: Date = new Date()): string => {
+        const checkDate = new Date(date);
+        // If it's before 6 AM, it belongs to the previous day's business
+        if (checkDate.getHours() < 6) {
+            checkDate.setDate(checkDate.getDate() - 1);
+        }
+        return checkDate.toISOString().slice(0, 10);
+    },
     getContrastYIQ: (hex: string) => {
         const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
         return ((r*299)+(g*587)+(b*114))/1000 >= 128 ? '#1A202C' : '#FFFFFF';
@@ -33,7 +48,7 @@ const getDefaultData = (): AppData => ({
         { id: 'menu-3', name: 'Mie Double', price: 16000, stockId: 'stock-1', qty: 2 },
         { id: 'menu-4', name: 'Mie Bangladesh', price: 16000, stockId: 'stock-1' },
         { id: 'menu-5', name: 'Nasi Ayam Panggang Besar', price: 27000, stockId: 'stock-8' },
-        { id: 'menu-6', name: 'Nasi Ayam Panggang Kecil', price: 27000, stockId: 'stock-8' },
+        { id: 'menu-6', name: 'Nasi Ayam Panggang Kecil', price: 20000, stockId: 'stock-8' },
     ],
     toppings: [
         { id: 'top-1', name: 'Sosis', price: 3000, stockId: 'stock-2' },
@@ -54,8 +69,12 @@ const getDefaultData = (): AppData => ({
         { id: 'stock-7', name: 'Telur (butir)', quantity: 30, minStock: 10 },
         { id: 'stock-8', name: 'Nasi Ayam Panggang (porsi)', quantity: 20, minStock: 5 },
     ],
-    transactions: [], expenses: [],
-    settings: { primaryColor: '#146b61', secondaryColor: '#FDFBF6', backgroundImage: '' }
+    transactions: [], 
+    expenses: [],
+    settings: { primaryColor: '#146b61', secondaryColor: '#FDFBF6', backgroundImage: '' },
+    dailyCash: [],
+    dailyLogs: [],
+    qayzanStudio: { daily: [], monthly: [] }
 });
 
 
@@ -65,6 +84,7 @@ const getNewOrder = (): Order => ({
 
 const App: React.FC = () => {
     const [activeTab, setActiveTab] = useState<Tab>('kasir');
+    const [isQayzanStudioUnlocked, setIsQayzanStudioUnlocked] = useState(false);
     
     const [data, setData] = useState<AppData>(() => {
         try {
@@ -72,11 +92,17 @@ const App: React.FC = () => {
             if (savedData) {
                 const parsedData = JSON.parse(savedData);
                 const defaults = getDefaultData();
+                // Ensure new fields exist on old data
                 const mergedData = {
                     ...defaults,
                     ...parsedData,
-                    settings: { ...defaults.settings, ...parsedData.settings }
+                    settings: { ...defaults.settings, ...parsedData.settings },
+                    dailyLogs: parsedData.dailyLogs || [],
+                    qayzanStudio: parsedData.qayzanStudio || { daily: [], monthly: [] },
                 };
+                // Clean up obsolete fields
+                delete (mergedData as any).historicalData;
+                delete (mergedData as any).previousTotalRevenue;
                 return mergedData;
             }
         } catch (error) {
@@ -112,6 +138,13 @@ const App: React.FC = () => {
         root.style.setProperty('--color-text-on-secondary', Utils.getContrastYIQ(settings.secondaryColor));
         root.style.setProperty('--background-image', settings.backgroundImage ? `url('${settings.backgroundImage}')` : 'none');
     }, [data.settings]);
+
+    // --- Security: Re-lock Qayzan Studio on tab change ---
+    useEffect(() => {
+        if (activeTab !== 'qayzan') {
+            setIsQayzanStudioUnlocked(false);
+        }
+    }, [activeTab]);
 
 
     // --- UI Handlers ---
@@ -157,6 +190,7 @@ const App: React.FC = () => {
             case 'laporan': return <LaporanPage {...pageProps} />;
             case 'stok': return <StokPage {...pageProps} />;
             case 'pengaturan': return <PengaturanPage {...pageProps} />;
+            case 'qayzan': return <QayzanStudioPage {...pageProps} isUnlocked={isQayzanStudioUnlocked} setIsUnlocked={setIsQayzanStudioUnlocked} />;
             default: return <KasirPage {...pageProps} />;
         }
     };

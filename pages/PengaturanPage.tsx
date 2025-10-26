@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import type { AppData, Settings, MenuItem, Topping, Drink, InventoryItem } from '../types';
 
@@ -83,6 +82,65 @@ const PengaturanPage: React.FC<PengaturanPageProps> = ({ data, setData, helpers 
              helpers.showModal({ title: 'Terjadi Kesalahan', body: <p className="text-gray-800">Tidak dapat menghubungi Gemini API.</p>, confirmText: 'Tutup' });
         }
     };
+
+    const handleExportData = () => {
+        try {
+            const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(
+                JSON.stringify(data, null, 2)
+            )}`;
+            const link = document.createElement("a");
+            link.href = jsonString;
+            link.download = `miednight-data-${new Date().toISOString().slice(0, 10)}.json`;
+            link.click();
+            helpers.showToast('Data berhasil diexport!');
+        } catch (error) {
+            console.error("Error exporting data:", error);
+            helpers.showToast('Gagal mengexport data.');
+        }
+    };
+
+    const handleImportData = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const text = e.target?.result;
+                if (typeof text !== 'string') {
+                    throw new Error("File reader did not return string.");
+                }
+                const importedData = JSON.parse(text);
+
+                // Basic validation
+                if (!importedData.menu || !importedData.inventory || !importedData.transactions || !importedData.settings) {
+                    throw new Error("Invalid data structure.");
+                }
+
+                helpers.showModal({
+                    title: 'Konfirmasi Import Data',
+                    body: <p className="text-gray-800">Anda akan menimpa semua data saat ini dengan data dari file. Data yang tidak disimpan akan hilang. Lanjutkan?</p>,
+                    confirmText: 'Ya, Timpa Data',
+                    onConfirm: () => {
+                        setData(importedData);
+                        helpers.showToast('Data berhasil diimport!');
+                    },
+                });
+
+            } catch (error) {
+                console.error("Error importing data:", error);
+                helpers.showModal({
+                    title: 'Import Gagal',
+                    body: <p className="text-gray-800">File tidak valid atau rusak. Pastikan Anda menggunakan file export yang benar.</p>,
+                    confirmText: 'Tutup',
+                });
+            } finally {
+                // Reset file input to allow re-uploading the same file
+                event.target.value = '';
+            }
+        };
+        reader.readAsText(file);
+    };
     
     const renderCard = (title: string, type: ItemType, items: EditableItem[], isStock = false) => (
         <div className="bg-white p-4 rounded-lg card-shadow text-on-secondary">
@@ -116,6 +174,24 @@ const PengaturanPage: React.FC<PengaturanPageProps> = ({ data, setData, helpers 
                     <div><label className="block text-sm font-medium">URL Gambar Background (Opsional)</label><input type="text" onChange={e => handleSettingChange('backgroundImage', e.target.value)} className="mt-1 block w-full border-gray-300 rounded-md text-gray-800" placeholder="Contoh: https://.../gambar.jpg" value={data.settings.backgroundImage} /><p className="text-xs text-gray-500 mt-1">Kosongkan jika tidak ingin pakai gambar background.</p></div>
                 </div>
             </div>
+
+            <div className="bg-white p-4 rounded-lg card-shadow text-on-secondary md:col-span-2 lg:col-span-3">
+                <h2 className="text-xl font-bold mb-4 border-b pb-2">Sinkronisasi & Cadangan Data</h2>
+                <p className="text-sm text-gray-600 mb-4">
+                    Simpan data Anda ke sebuah file untuk dicadangkan atau dipindahkan ke perangkat lain (misal: HP, tablet, atau komputer lain).
+                    Proses ini manual, jadi pastikan Anda menyimpan file export di tempat aman.
+                </p>
+                <div className="flex flex-wrap gap-4">
+                    <button onClick={handleExportData} className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition">
+                        Export Data ke File
+                    </button>
+                    <label className="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 transition cursor-pointer">
+                        Import Data dari File
+                        <input type="file" accept=".json,application/json" className="hidden" onChange={handleImportData} />
+                    </label>
+                </div>
+            </div>
+
             {renderCard('Menu Utama', 'menu', data.menu)}
             {renderCard('Topping', 'toppings', data.toppings)}
             {renderCard('Minuman', 'drinks', data.drinks)}

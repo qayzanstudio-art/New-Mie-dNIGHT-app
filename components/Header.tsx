@@ -1,4 +1,3 @@
-
 import React from 'react';
 import type { Tab } from '../types';
 
@@ -20,6 +19,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
         { key: 'laporan', label: 'LAPORAN' },
         { key: 'stok', label: 'STOK' },
         { key: 'pengaturan', label: 'PENGATURAN' },
+        { key: 'qayzan', label: 'QAYZAN STUDIO' },
     ];
 
     return (

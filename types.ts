@@ -1,7 +1,6 @@
-// Fix: Import React to use React.ReactNode type.
 import React from 'react';
 
-export type Tab = 'kasir' | 'pesanan' | 'laporan' | 'stok' | 'pengaturan';
+export type Tab = 'kasir' | 'pesanan' | 'laporan' | 'stok' | 'pengaturan' | 'qayzan';
 
 export interface BaseMenuItem {
     id: string;
@@ -59,6 +58,35 @@ export interface Settings {
     backgroundImage: string;
 }
 
+export interface DailyCash {
+    date: string; // YYYY-MM-DD
+    startingFloat: number;
+}
+
+export interface DailyLog {
+  date: string; // YYYY-MM-DD
+  manualRevenue?: number; 
+  manualExpenses?: number; 
+  savingsDeposited: boolean;
+  savingsAmount?: number;
+  cashReconciled?: boolean;
+  actualCashInHand?: number;
+  cashDifference?: number;
+}
+
+export interface QayzanStudioDailyData {
+    date: string; // YYYY-MM-DD
+    cashOnHand: number;
+    bankBalance: number;
+    danaBalance: number;
+    dailyTarget: number;
+}
+
+export interface QayzanStudioMonthlyData {
+    yearMonth: string; // YYYY-MM
+    monthlyTarget: number;
+}
+
 export interface AppData {
     menu: MenuItem[];
     toppings: Topping[];
@@ -67,6 +95,12 @@ export interface AppData {
     transactions: Transaction[];
     expenses: Expense[];
     settings: Settings;
+    dailyCash: DailyCash[];
+    dailyLogs: DailyLog[];
+    qayzanStudio: {
+        daily: QayzanStudioDailyData[];
+        monthly: QayzanStudioMonthlyData[];
+    };
 }
 
 export interface ModalState {
