@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import type { AppData, Transaction, Order, Tab, OrderItem } from '../types';
 import { Utils } from '../App';
@@ -11,15 +10,18 @@ interface PesananPageProps {
     helpers: {
         showModal: (config: any) => void;
         showToast: (message: string) => void;
-    }
+    };
+    isTodayClosed: boolean;
+    handleCloseDay: () => void;
+    businessDate: string;
 }
 
-const PesananPage: React.FC<PesananPageProps> = ({ data, setData, setCurrentOrder, setActiveTab, helpers }) => {
-    const [filters, setFilters] = useState({ date: '', status: 'Semua', method: 'Semua', name: '', delivered: 'Semua' });
+const PesananPage: React.FC<PesananPageProps> = ({ data, setData, setCurrentOrder, setActiveTab, helpers, isTodayClosed, handleCloseDay, businessDate }) => {
+    const [filters, setFilters] = useState({ date: businessDate, status: 'Semua', method: 'Semua', name: '', delivered: 'Semua' });
 
     const filteredTransactions = useMemo(() => {
         let transactions = data.transactions;
-        if (filters.date) transactions = transactions.filter(t => t.createdAt.startsWith(filters.date));
+        if (filters.date) transactions = transactions.filter(t => t.createdAt && t.createdAt.startsWith(filters.date));
         if (filters.status !== 'Semua') transactions = transactions.filter(t => t.payment.status === filters.status);
         if (filters.method !== 'Semua') transactions = transactions.filter(t => t.payment.method === filters.method);
         if (filters.name) transactions = transactions.filter(t => t.customerName.toLowerCase().includes(filters.name.toLowerCase()));
@@ -35,6 +37,9 @@ const PesananPage: React.FC<PesananPageProps> = ({ data, setData, setCurrentOrde
     };
 
     const handleEdit = (transaction: Transaction) => {
+        // The check for isTodayClosed is handled on the Kasir page
+        // to allow editing but prevent creation of new orders.
+        // This allows users to enter monitoring mode and still correct past data.
         setCurrentOrder(JSON.parse(JSON.stringify(transaction)));
         setActiveTab('kasir');
     };
@@ -83,10 +88,34 @@ const PesananPage: React.FC<PesananPageProps> = ({ data, setData, setCurrentOrde
             }
         });
     };
+    
+    const confirmCloseDay = () => {
+        helpers.showModal({
+            title: 'Konfirmasi Tutup Hari Ini',
+            body: (
+                <div className="text-gray-800">
+                    <p className="mb-2">Anda yakin ingin menutup penjualan untuk hari ini?</p>
+                    <p className="text-sm font-semibold">Tindakan ini akan memfinalisasi laporan penjualan hari ini dan tidak dapat dibatalkan.</p>
+                </div>
+            ),
+            confirmText: 'Ya, Tutup Hari Ini',
+            onConfirm: handleCloseDay,
+        });
+    };
 
     return (
         <div className="bg-white p-4 rounded-lg card-shadow text-on-secondary">
-            <h2 className="text-xl font-bold mb-4 border-b pb-2">Daftar Pesanan</h2>
+            <div className="flex justify-between items-center mb-4 border-b pb-2">
+                <h2 className="text-xl font-bold">Daftar Pesanan</h2>
+                <button
+                    onClick={confirmCloseDay}
+                    disabled={isTodayClosed}
+                    className="bg-orange-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                    {isTodayClosed ? 'Hari Ini Sudah Ditutup' : 'Tutup Hari Ini (Close Order)'}
+                </button>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4 p-4 bg-gray-50 rounded-lg text-gray-800">
                 <div><label className="text-sm font-medium">Tanggal</label><input type="date" value={filters.date} onChange={e => handleFilterChange('date', e.target.value)} className="mt-1 w-full border-gray-300 rounded-md" /></div>
                 <div><label className="text-sm font-medium">Status Bayar</label><select value={filters.status} onChange={e => handleFilterChange('status', e.target.value)} className="mt-1 w-full border-gray-300 rounded-md"><option>Semua</option><option>Sudah Bayar</option><option>Belum Bayar</option></select></div>
@@ -102,7 +131,13 @@ const PesananPage: React.FC<PesananPageProps> = ({ data, setData, setCurrentOrde
                             <tr key={t.id} className="border-b hover:bg-secondary-dark/50">
                                 <td className="p-3" dangerouslySetInnerHTML={{ __html: Utils.formatDate(t.createdAt).replace(',', '<br>') }}></td>
                                 <td className="p-3 font-semibold">{t.customerName || '-'}</td>
-                                <td className="p-3 max-w-xs truncate">{t.items.map(i => `${i.name} (x${i.quantity})`).join(', ')}</td>
+                                <td className="p-3">
+                                    <ul className="list-disc list-inside text-xs">
+                                        {t.items.map(item => (
+                                            <li key={item.id}>{`${item.name} (x${item.quantity})`}</li>
+                                        ))}
+                                    </ul>
+                                </td>
                                 <td className="p-3 font-semibold">{Utils.formatCurrency(t.total)}</td>
                                 <td className="p-3"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${t.payment.status === 'Sudah Bayar' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{t.payment.status} ({t.payment.method})</span></td>
                                 <td className="p-3">

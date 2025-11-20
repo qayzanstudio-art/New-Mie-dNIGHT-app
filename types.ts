@@ -15,7 +15,7 @@ export type Topping = BaseMenuItem;
 export type Drink = BaseMenuItem;
 
 export interface InventoryItem {
-    id: string;
+    id:string;
     name: string;
     quantity: number;
     minStock: number;
@@ -72,20 +72,39 @@ export interface DailyLog {
   cashReconciled?: boolean;
   actualCashInHand?: number;
   cashDifference?: number;
+  isClosed?: boolean;
+}
+
+// --- NEW QAYZAN STUDIO TYPES ---
+export interface LedgerEntry {
+    id: string;
+    description: string;
+    amount: number;
+    type: 'income' | 'expense';
+    method: 'cash' | 'bank' | 'dana';
+    isAuto?: boolean; // To distinguish POS income from manual entries
 }
 
 export interface QayzanStudioDailyData {
-    date: string; // YYYY-MM-DD
-    cashOnHand: number;
-    bankBalance: number;
-    danaBalance: number;
-    dailyTarget: number;
+    date: string;
+    startingCash: number;
+    startingBank: number;
+    startingDana: number;
+    ledger: LedgerEntry[];
 }
 
 export interface QayzanStudioMonthlyData {
     yearMonth: string; // YYYY-MM
     monthlyTarget: number;
 }
+
+export interface QayzanStudioData {
+    daily: QayzanStudioDailyData[];
+    monthly: QayzanStudioMonthlyData[];
+    savingsBalance: number;
+}
+// --- END NEW QAYZAN STUDIO TYPES ---
+
 
 export interface AppData {
     menu: MenuItem[];
@@ -97,10 +116,7 @@ export interface AppData {
     settings: Settings;
     dailyCash: DailyCash[];
     dailyLogs: DailyLog[];
-    qayzanStudio: {
-        daily: QayzanStudioDailyData[];
-        monthly: QayzanStudioMonthlyData[];
-    };
+    qayzanStudio: QayzanStudioData;
 }
 
 export interface ModalState {
@@ -116,4 +132,12 @@ export interface ModalState {
 export interface ToastState {
     isVisible: boolean;
     message: string;
+}
+
+export interface SummaryData {
+    date: string;
+    totalOmzet: number;
+    cashSales: number;
+    qrisSales: number;
+    transactions: Transaction[];
 }

@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import type { AppData, Order, MenuItem, Topping, Drink, OrderItem } from '../types';
 import { Utils } from '../App';
 
@@ -11,19 +11,31 @@ interface KasirPageProps {
     helpers: {
         getStockItemById: (id: string) => any;
         showToast: (message: string) => void;
-    }
+    };
+    isTodayClosed: boolean;
+    businessDate: string;
 }
 
 const getNewOrder = (): Order => ({
     id: null, items: [], customerName: '', payment: { status: 'Belum Bayar', method: 'Cash' }, delivered: false, createdAt: null, total: 0
 });
 
-const KasirPage: React.FC<KasirPageProps> = ({ data, setData, currentOrder, setCurrentOrder, helpers }) => {
+const KasirPage: React.FC<KasirPageProps> = ({ data, setData, currentOrder, setCurrentOrder, helpers, isTodayClosed, businessDate }) => {
     const { getStockItemById, showToast } = helpers;
+    const [clickedItemId, setClickedItemId] = useState<string | null>(null);
 
     const calculateTotal = useCallback((items: OrderItem[]) => items.reduce((sum, item) => sum + (item.price * item.quantity), 0), []);
 
     const handleAddItem = useCallback((itemToAdd: MenuItem | Topping | Drink) => {
+        if (isTodayClosed) {
+            showToast('Mode Monitoring: Tidak bisa menambah pesanan baru.');
+            return;
+        }
+        // Visual feedback logic
+        setClickedItemId(itemToAdd.id);
+        setTimeout(() => setClickedItemId(null), 500);
+
+        // Existing logic to add item to order
         const stockItem = getStockItemById(itemToAdd.stockId);
         
         setCurrentOrder(prevOrder => {
@@ -38,7 +50,18 @@ const KasirPage: React.FC<KasirPageProps> = ({ data, setData, currentOrder, setC
 
             let orderToUpdate = { ...prevOrder };
             if (!orderToUpdate.id && orderToUpdate.items.length === 0) {
-                orderToUpdate.createdAt = new Date().toISOString();
+                if (isTodayClosed) {
+                    showToast('Hari ini sudah ditutup, tidak bisa membuat pesanan baru.');
+                    return prevOrder;
+                }
+                const now = new Date();
+                const hours = String(now.getHours()).padStart(2, '0');
+                const minutes = String(now.getMinutes()).padStart(2, '0');
+                const seconds = String(now.getSeconds()).padStart(2, '0');
+                
+                // Construct a timezone-naive ISO-like string based on local time.
+                // This ensures the date part always matches the selected businessDate.
+                orderToUpdate.createdAt = `${businessDate}T${hours}:${minutes}:${seconds}`;
                 orderToUpdate.id = `TRX-${Date.now()}`;
             }
 
@@ -57,7 +80,7 @@ const KasirPage: React.FC<KasirPageProps> = ({ data, setData, currentOrder, setC
                 total: calculateTotal(newItems),
             };
         });
-    }, [getStockItemById, setCurrentOrder, showToast, calculateTotal]);
+    }, [getStockItemById, setCurrentOrder, showToast, calculateTotal, isTodayClosed, businessDate]);
 
     const handleIncrementItem = useCallback((itemId: string) => {
         setCurrentOrder(prevOrder => {
@@ -118,14 +141,38 @@ const KasirPage: React.FC<KasirPageProps> = ({ data, setData, currentOrder, setC
     const isEditMode = useMemo(() => currentOrder.id && data.transactions.some(t => t.id === currentOrder.id), [currentOrder.id, data.transactions]);
 
     const renderMenuSelection = () => {
-        const renderItems = (items: (MenuItem | Topping | Drink)[], type: 'menu' | 'toppings' | 'drinks') => items.map(item => (
-            <button key={item.id} onClick={() => handleAddItem(item)} className={`p-3 rounded-lg text-center shadow transition ${type === 'menu' ? 'btn-primary hover:btn-primary-dark' : 'bg-secondary-dark text-on-secondary hover:bg-white'}`}>
-                <span className="font-semibold">{type === 'toppings' ? '+ ' : ''}{item.name}</span><br /><span className="text-sm">{Utils.formatCurrency(item.price)}</span>
-            </button>
-        ));
+        const renderItems = (items: (MenuItem | Topping | Drink)[], type: 'menu' | 'toppings' | 'drinks') => items.map(item => {
+            const isClicked = clickedItemId === item.id;
+            const baseClass = "p-3 rounded-lg text-center shadow transition-colors duration-500 disabled:bg-gray-300 disabled:cursor-not-allowed";
+            
+            let typeClass = '';
+            if (type === 'menu') {
+                // Temporary style on click, otherwise default style without hover effect
+                typeClass = isClicked 
+                    ? 'bg-[#fff9eb] text-[var(--color-primary)] border border-[var(--color-primary)]'
+                    : 'btn-primary';
+            } else { // toppings and drinks
+                // Temporary inverted style on click, otherwise default style without hover effect
+                typeClass = isClicked
+                    ? 'bg-[var(--color-primary)] text-[#fff9eb]'
+                    : 'bg-[#fff9eb] text-[var(--color-primary)]';
+            }
+
+            return (
+                <button key={item.id} onClick={() => handleAddItem(item)} className={`${baseClass} ${typeClass}`} disabled={isTodayClosed && !isEditMode}>
+                    <span className="font-semibold">{type === 'toppings' ? '+ ' : ''}{item.name}</span><br />
+                    <span className="text-sm">{Utils.formatCurrency(item.price)}</span>
+                </button>
+            );
+        });
 
         return (
             <div className="bg-white p-4 rounded-lg card-shadow text-on-secondary">
+                {isTodayClosed && (
+                    <div className="p-3 mb-4 bg-yellow-100 text-yellow-800 text-center font-bold rounded-md text-sm border border-yellow-300">
+                        MODE MONITORING: Sesi penjualan hari ini sudah ditutup. Anda hanya bisa mengedit pesanan yang ada.
+                    </div>
+                )}
                 <h2 className="text-xl font-bold mb-4 border-b pb-2">Pilih Menu</h2>
                 <div className="mb-4"><h3 className="font-semibold text-lg mb-2">Menu Utama</h3><div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">{renderItems(data.menu, 'menu')}</div></div>
                 <div className="mb-4"><h3 className="font-semibold text-lg mb-2">Topping</h3><div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">{renderItems(data.toppings, 'toppings')}</div></div>
@@ -141,6 +188,17 @@ const KasirPage: React.FC<KasirPageProps> = ({ data, setData, currentOrder, setC
                 showToast('Pesanan harus memiliki menu utama!');
                 return;
             }
+
+            // Block processing if the day is closed, except when editing an existing order from that closed day
+            if (isEditMode && currentOrder.createdAt) {
+                const orderBusinessDate = Utils.getBusinessDateString(new Date(currentOrder.createdAt));
+                const isOrderDayClosed = data.dailyLogs.find(log => log.date === orderBusinessDate)?.isClosed || false;
+                 // Allow editing even if closed
+            } else if (!isEditMode && isTodayClosed) {
+                showToast('Hari ini sudah ditutup, tidak bisa membuat pesanan baru.');
+                return;
+            }
+
 
             setData(prevData => {
                 const newTransactions = [...prevData.transactions];
@@ -209,7 +267,7 @@ const KasirPage: React.FC<KasirPageProps> = ({ data, setData, currentOrder, setC
         <div className="bg-white p-4 rounded-lg card-shadow self-start sticky top-24 text-on-secondary">
             {isEditMode && <div className="p-2 mb-3 bg-yellow-200 text-yellow-800 text-center font-bold rounded-md text-sm">MODE EDIT</div>}
             <h2 className="text-xl font-bold mb-4 border-b pb-2">Pesanan Saat Ini</h2>
-            <div className="mb-3"><label htmlFor="customerName" className="block text-sm font-medium">Nama/Nomor Meja</label><input type="text" id="customerName" value={currentOrder.customerName} onChange={(e) => handleOrderChange('customerName', e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-primary sm:text-sm text-white" /></div>
+            <div className="mb-3"><label htmlFor="customerName" className="block text-sm font-medium">Nama/Nomor Meja</label><input type="text" id="customerName" value={currentOrder.customerName} onChange={(e) => handleOrderChange('customerName', e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-primary sm:text-sm text-white disabled:bg-gray-200" disabled={isTodayClosed && !isEditMode}/></div>
             <div className="mb-4 max-h-60 overflow-y-auto pr-2">
                 {currentOrder.items.length > 0 ? currentOrder.items.map((item) => (
                     <div key={item.id} className="flex justify-between items-center py-2 border-b border-dashed">

@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import type { Tab, AppData, Order, Transaction, InventoryItem, MenuItem, Settings, ModalState, ToastState } from './types';
+import type { Tab, AppData, Order, Transaction, InventoryItem, MenuItem, Settings, ModalState, ToastState, SummaryData, QayzanStudioData } from './types';
 import { generateDailySummary, generateMenuIdeas } from './services/geminiService';
 import KasirPage from './pages/KasirPage';
 import PesananPage from './pages/PesananPage';
 import LaporanPage from './pages/LaporanPage';
 import StokPage from './pages/StokPage';
 import PengaturanPage from './pages/PengaturanPage';
-import QayzanStudioPage from './pages/QayzanStudioPage';
+import HomeScreen from './pages/HomeScreen';
 import { Header } from './components/Header';
 import { Modal } from './components/Modal';
 import { Toast } from './components/Toast';
+import { SummaryReport } from './components/SummaryReport';
+import QayzanStudioPage from './pages/QayzanStudioPage';
 
 // --- UTILS ---
 export const Utils = {
@@ -74,7 +76,11 @@ const getDefaultData = (): AppData => ({
     settings: { primaryColor: '#146b61', secondaryColor: '#FDFBF6', backgroundImage: '' },
     dailyCash: [],
     dailyLogs: [],
-    qayzanStudio: { daily: [], monthly: [] }
+    qayzanStudio: {
+        daily: [],
+        monthly: [],
+        savingsBalance: 0
+    }
 });
 
 
@@ -84,7 +90,9 @@ const getNewOrder = (): Order => ({
 
 const App: React.FC = () => {
     const [activeTab, setActiveTab] = useState<Tab>('kasir');
-    const [isQayzanStudioUnlocked, setIsQayzanStudioUnlocked] = useState(false);
+    const [businessDate, setBusinessDate] = useState<string | null>(null);
+    const [summaryReportData, setSummaryReportData] = useState<SummaryData | null>(null);
+    const [isQayzanUnlocked, setIsQayzanUnlocked] = useState(false);
     
     const [data, setData] = useState<AppData>(() => {
         try {
@@ -92,21 +100,37 @@ const App: React.FC = () => {
             if (savedData) {
                 const parsedData = JSON.parse(savedData);
                 const defaults = getDefaultData();
-                // Ensure new fields exist on old data
+
+                // --- DATA MIGRATION LOGIC ---
+                // Qayzan Studio data structure changed, let's migrate it.
+                if (parsedData.qayzanStudio && parsedData.qayzanStudio.daily && parsedData.qayzanStudio.daily.length > 0 && 'cashOnHand' in parsedData.qayzanStudio.daily[0]) {
+                    console.log("Migrating old Qayzan Studio data to new ledger format...");
+                    const newDailyData = parsedData.qayzanStudio.daily.map((oldEntry: any) => ({
+                        date: oldEntry.date,
+                        startingCash: oldEntry.cashOnHand || 0,
+                        startingBank: oldEntry.bankBalance || 0,
+                        startingDana: oldEntry.danaBalance || 0,
+                        ledger: [], // Old data didn't have a ledger, start fresh
+                    }));
+                    parsedData.qayzanStudio.daily = newDailyData;
+                }
+                
+                // Ensure new fields exist on old data by merging defaults
                 const mergedData = {
                     ...defaults,
                     ...parsedData,
                     settings: { ...defaults.settings, ...parsedData.settings },
                     dailyLogs: parsedData.dailyLogs || [],
-                    qayzanStudio: parsedData.qayzanStudio || { daily: [], monthly: [] },
+                    qayzanStudio: { ...defaults.qayzanStudio, ...(parsedData.qayzanStudio || {}) },
                 };
+
                 // Clean up obsolete fields
                 delete (mergedData as any).historicalData;
                 delete (mergedData as any).previousTotalRevenue;
                 return mergedData;
             }
         } catch (error) {
-            console.error("Failed to load data from localStorage", error);
+            console.error("Failed to load or migrate data from localStorage", error);
         }
         return getDefaultData();
     });
@@ -114,6 +138,12 @@ const App: React.FC = () => {
     const [currentOrder, setCurrentOrder] = useState<Order>(getNewOrder());
     const [modalState, setModalState] = useState<ModalState>({ isOpen: false, title: '', body: null });
     const [toastState, setToastState] = useState<ToastState>({ isVisible: false, message: '' });
+
+    const isTodayClosed = useMemo(() => {
+        if (!businessDate) return true; // Block actions if session hasn't started
+        return data.dailyLogs.find(log => log.date === businessDate)?.isClosed || false;
+    }, [data.dailyLogs, businessDate]);
+
 
     // --- Local Storage and Theme Sync ---
     useEffect(() => {
@@ -139,14 +169,6 @@ const App: React.FC = () => {
         root.style.setProperty('--background-image', settings.backgroundImage ? `url('${settings.backgroundImage}')` : 'none');
     }, [data.settings]);
 
-    // --- Security: Re-lock Qayzan Studio on tab change ---
-    useEffect(() => {
-        if (activeTab !== 'qayzan') {
-            setIsQayzanStudioUnlocked(false);
-        }
-    }, [activeTab]);
-
-
     // --- UI Handlers ---
     const showToast = useCallback((message: string) => {
         setToastState({ message, isVisible: true });
@@ -160,6 +182,78 @@ const App: React.FC = () => {
     const hideModal = useCallback(() => {
         setModalState(prev => ({...prev, isOpen: false}));
     }, []);
+    
+    const handleStartSession = (date: string) => {
+        setBusinessDate(date);
+        setActiveTab('kasir'); // Go to kasir page after starting
+    };
+
+    const handleCloseSummary = () => {
+        setSummaryReportData(null);
+        setBusinessDate(null); // Return to HomeScreen
+    };
+
+    const handleGoHome = () => {
+        setBusinessDate(null);
+    };
+
+    const handleTabChange = (newTab: Tab) => {
+        if (activeTab === 'qayzan' && newTab !== 'qayzan') {
+            setIsQayzanUnlocked(false); // Lock Qayzan Studio when navigating away
+        }
+        setActiveTab(newTab);
+    };
+
+    // --- Business Logic ---
+    const handleCloseDay = useCallback(() => {
+        if (!businessDate) return;
+
+        const { transactions, expenses } = data;
+
+        // Calculate summary based on the CURRENT data state before queueing updates.
+        const dailyTrx = transactions.filter(t => t.createdAt && t.createdAt.startsWith(businessDate) && t.payment.status === 'Sudah Bayar');
+        const dailyExpenses = expenses.filter(e => e.date === businessDate);
+        
+        const totalOmzet = dailyTrx.reduce((s, t) => s + t.total, 0);
+        const cashSales = dailyTrx.filter(t => t.payment.method === 'Cash').reduce((s, t) => s + t.total, 0);
+        const qrisSales = dailyTrx.filter(t => t.payment.method === 'QRIS').reduce((s, t) => s + t.total, 0);
+        const totalExpenses = dailyExpenses.reduce((s, e) => s + e.amount, 0);
+
+        const summary: SummaryData = {
+            date: businessDate,
+            totalOmzet,
+            cashSales,
+            qrisSales,
+            transactions: dailyTrx,
+        };
+
+        // Now queue the state update for the main data
+        setData(prevData => {
+            const logIndex = prevData.dailyLogs.findIndex(l => l.date === businessDate);
+            let newLogs = [...prevData.dailyLogs];
+
+            const logUpdate = {
+                isClosed: true,
+                manualRevenue: totalOmzet,
+                manualExpenses: totalExpenses,
+            };
+
+            if (logIndex > -1) {
+                newLogs[logIndex] = { ...newLogs[logIndex], ...logUpdate };
+            } else {
+                newLogs.push({ date: businessDate, savingsDeposited: false, ...logUpdate });
+            }
+
+            return { ...prevData, dailyLogs: newLogs };
+        });
+
+        // And queue the state update to show the summary modal.
+        // This will be batched with the setData update by React.
+        setSummaryReportData(summary);
+        
+        showToast('Hari ini telah ditutup. Laporan penjualan telah difinalisasi.');
+    }, [businessDate, data, setData, showToast]);
+
 
     // --- Data Access Helpers ---
     const getItemById = useCallback(<T extends { id: string }>(type: keyof AppData, id: string): T | undefined => {
@@ -183,17 +277,41 @@ const App: React.FC = () => {
     
     // --- Page Rendering ---
     const renderPage = () => {
-        const pageProps = { data, setData, currentOrder, setCurrentOrder, helpers };
+        const pageProps = { data, setData, currentOrder, setCurrentOrder, helpers, isTodayClosed };
         switch (activeTab) {
-            case 'kasir': return <KasirPage {...pageProps} />;
-            case 'pesanan': return <PesananPage {...pageProps} setActiveTab={setActiveTab} />;
-            case 'laporan': return <LaporanPage {...pageProps} />;
+            case 'kasir': return <KasirPage {...pageProps} businessDate={businessDate!} />;
+            case 'pesanan': return <PesananPage {...pageProps} setActiveTab={handleTabChange} handleCloseDay={handleCloseDay} businessDate={businessDate!} />;
+            case 'laporan': return <LaporanPage {...pageProps} businessDate={businessDate!} />;
             case 'stok': return <StokPage {...pageProps} />;
             case 'pengaturan': return <PengaturanPage {...pageProps} />;
-            case 'qayzan': return <QayzanStudioPage {...pageProps} isUnlocked={isQayzanStudioUnlocked} setIsUnlocked={setIsQayzanStudioUnlocked} />;
-            default: return <KasirPage {...pageProps} />;
+            case 'qayzan': return <QayzanStudioPage {...pageProps} isUnlocked={isQayzanUnlocked} setIsUnlocked={setIsQayzanUnlocked} businessDate={businessDate!} />;
+            default: return <KasirPage {...pageProps} businessDate={businessDate!} />;
         }
     };
+    
+    if (summaryReportData) {
+        return <SummaryReport data={summaryReportData} onClose={handleCloseSummary} />;
+    }
+
+    if (!businessDate) {
+        return (
+            <>
+                <style>{`
+                    :root {
+                        --color-primary: ${data.settings.primaryColor};
+                        --color-secondary: ${data.settings.secondaryColor};
+                    }
+                `}</style>
+                <HomeScreen 
+                    onStartSession={handleStartSession} 
+                    showModal={showModal} 
+                    settings={data.settings}
+                    dailyLogs={data.dailyLogs}
+                />
+                 <Modal {...modalState} onClose={hideModal} />
+            </>
+        )
+    }
     
     return (
         <div className="min-h-screen flex flex-col bg-secondary/80 backdrop-blur-sm">
@@ -226,7 +344,7 @@ const App: React.FC = () => {
                 .hover\\:btn-primary-dark:hover { background-color: var(--color-primary-dark); }
             `}
             </style>
-            <Header activeTab={activeTab} setActiveTab={setActiveTab} />
+            <Header activeTab={activeTab} setActiveTab={handleTabChange} isMonitoring={isTodayClosed} onGoHome={handleGoHome} />
             <main className="container mx-auto p-4 flex-grow">
                 {renderPage()}
             </main>

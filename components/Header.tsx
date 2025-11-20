@@ -4,6 +4,8 @@ import type { Tab } from '../types';
 interface HeaderProps {
     activeTab: Tab;
     setActiveTab: (tab: Tab) => void;
+    isMonitoring: boolean;
+    onGoHome: () => void;
 }
 
 const LogoIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -12,7 +14,7 @@ const LogoIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 
-export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
+export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab, isMonitoring, onGoHome }) => {
     const tabs: { key: Tab; label: string }[] = [
         { key: 'kasir', label: 'KASIR' },
         { key: 'pesanan', label: 'PESANAN' },
@@ -30,7 +32,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
                         <LogoIcon className="w-8 h-8 text-on-primary" />
                         <h1 className="text-3xl font-bold">Mie-dNight</h1>
                     </div>
-                    <div className="flex space-x-1 md:space-x-2">
+                    <div className="flex items-center space-x-1 md:space-x-2">
                         {tabs.map(tab => (
                             <button
                                 key={tab.key}
@@ -40,6 +42,18 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
                                 {tab.label}
                             </button>
                         ))}
+                         {isMonitoring && (
+                            <button
+                                onClick={onGoHome}
+                                className="ml-4 flex items-center gap-2 bg-gray-100 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-gray-200 transition text-sm"
+                                title="Kembali ke layar utama untuk memilih tanggal"
+                            >
+                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
+                                </svg>
+                                <span>Kembali ke Home</span>
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
